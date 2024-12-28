@@ -1,89 +1,33 @@
-from scapy.all import sniff, IP, TCP, UDP, conf
+import streamlit as st
 import pandas as pd
-import matplotlib
-matplotlib.use('Agg')  # Use non-GUI backend
-import matplotlib.pyplot as plt
-from flask import Flask, render_template, request, redirect, url_for
-import threading
-import os
 
-# Configure Scapy to use Npcap
-conf.use_pcap = True
+# Assuming packet_data is a DataFrame containing your packet data
+packet_data = pd.DataFrame({
+    'Protocol': ['TCP', 'UDP', 'TCP', 'ICMP'],
+    'Source': ['192.168.1.1', '192.168.1.2', '192.168.1.3', '192.168.1.4'],
+    'Destination': ['192.168.1.5', '192.168.1.6', '192.168.1.7', '192.168.1.8'],
+    'Length': [60, 70, 80, 90]
+})
 
-# DataFrame to store captured packets
-packet_data = pd.DataFrame(columns=["Time", "Source", "Destination", "Protocol", "Length"])
-packet_data_lock = threading.Lock()
-sniffing = False
-sniff_thread = None
+# Streamlit app
+st.title('Network Traffic Monitor')
 
-def packet_callback(packet):
-    global packet_data
-    if IP in packet:
-        protocol = "TCP" if packet.haslayer(TCP) else "UDP" if packet.haslayer(UDP) else "Other"
-        new_packet = {
-            "Time": packet.time,
-            "Source": packet[IP].src,
-            "Destination": packet[IP].dst,
-            "Protocol": protocol,
-            "Length": len(packet)
-        }
-        with packet_data_lock:
-            packet_data = pd.concat([packet_data, pd.DataFrame([new_packet])], ignore_index=True)
+# Home page
+st.header('Home')
+if st.button('Stop Sniffing'):
+    # Implement your stop_sniffing logic here
+    st.write('Sniffing stopped.')
 
-def start_sniffing():
-    global sniffing
-    sniffing = True
-    print("Starting packet capture...")
-    sniff(prn=packet_callback, store=False)
+# Filter packets
+st.header('Filter Packets')
+protocol = st.selectbox('Select Protocol', packet_data['Protocol'].unique())
+filtered_data = packet_data[packet_data['Protocol'] == protocol]
+st.write(filtered_data)
 
-def stop_sniffing():
-    global sniffing
-    sniffing = False
-    print("Stopping packet capture...")
+# Display traffic chart
+st.header('Traffic by Protocol')
+st.image('static/traffic_chart.png', caption='Traffic Chart')
 
-def visualize_traffic():
-    global packet_data
-    with packet_data_lock:
-        if packet_data.empty:
-            print("No packets captured yet.")
-            return
-        plt.figure(figsize=(10, 6))
-        packet_data['Protocol'].value_counts().plot(kind='bar')
-        plt.xlabel("Protocol")
-        plt.ylabel("Count")
-        os.makedirs("static", exist_ok=True)
-        plt.savefig("static/traffic_chart.png")
-        print("Traffic chart saved as 'static/traffic_chart.png'")
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    visualize_traffic()
-    with packet_data_lock:
-        return render_template('index.html', table=packet_data.tail(10).to_html(classes="table"))
-
-@app.route('/start')
-def start():
-    global sniff_thread
-    if not sniffing:
-        sniff_thread = threading.Thread(target=start_sniffing, daemon=True)
-        sniff_thread.start()
-    return redirect(url_for('home'))
-
-@app.route('/stop')
-def stop():
-    if sniffing:
-        stop_sniffing()
-    return redirect(url_for('home'))
-
-@app.route('/filter', methods=['POST'])
-def filter_packets():
-    protocol = request.form.get('protocol')
-    with packet_data_lock:
-        filtered_data = packet_data[packet_data['Protocol'] == protocol]
-        return render_template('index.html', table=filtered_data.to_html(classes="table"))
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    app.run(host='0.0.0.0', port=port)
+# Display recent packets table
+st.header('Recent Packets')
+st.write(packet_data)
